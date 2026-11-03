@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Astro Akaun: Misi Penjelajahan Galaksi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Rajdhani', sans-serif;
+            color: white;
+            touch-action: none;
+        }
+
+        h1, h2, h3, .orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Video Background */
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror mode */
+            z-index: 1;
+            opacity: 0.4; /* Dimmed to make game pop */
+            filter: grayscale(30%) sepia(20%) hue-rotate(180deg) brightness(0.8); /* Sci-fi tint */
+        }
+
+        /* Canvas Overlay */
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            /* No scaleX here, we handle mirroring in JS coordinates for drawing */
+        }
+
+        /* UI Overlays */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, rgba(10,10,30,0.6) 0%, rgba(0,0,10,0.9) 100%);
+            backdrop-filter: blur(4px);
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Neon Buttons */
+        .neon-btn {
+            background: transparent;
+            color: #0ff;
+            border: 2px solid #0ff;
+            padding: 12px 32px;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3), inset 0 0 10px rgba(0, 255, 255, 0.2);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+        }
+
+        .neon-btn:hover {
+            background: #0ff;
+            color: #000;
+            box-shadow: 0 0 20px #0ff, inset 0 0 20px #0ff;
+        }
+
+        .neon-btn-red {
+            color: #f0f;
+            border-color: #f0f;
+            box-shadow: 0 0 10px rgba(255, 0, 255, 0.3), inset 0 0 10px rgba(255, 0, 255, 0.2);
+        }
+        .neon-btn-red:hover {
+            background: #f0f;
+            color: #000;
+            box-shadow: 0 0 20px #f0f, inset 0 0 20px #f0f;
+        }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        .hud-panel {
+            background: rgba(0, 20, 40, 0.7);
+            border: 1px solid #0ff;
+            border-radius: 12px;
+            padding: 10px 20px;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 5px #0ff, 0 0 10px #0ff;
+        }
+        .text-glow-red {
+            text-shadow: 0 0 5px #f00, 0 0 10px #f00;
+        }
+        .text-glow-green {
+            text-shadow: 0 0 5px #0f0, 0 0 10px #0f0;
+        }
+
+        /* Mission Target Animation */
+        @keyframes pulseTarget {
+            0% { transform: scale(1); box-shadow: 0 0 10px #ff0; }
+            50% { transform: scale(1.05); box-shadow: 0 0 25px #ff0; }
+            100% { transform: scale(1); box-shadow: 0 0 10px #ff0; }
+        }
+        .mission-box {
+            animation: pulseTarget 2s infinite;
+            background: rgba(40, 40, 0, 0.8);
+            border: 2px solid #ff0;
+        }
+
+        /* Damage Overlay */
+        #damage-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 50%, rgba(255,0,0,0.5) 100%);
+            z-index: 12;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+        
+        .shake {
+            animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
+            40%, 60% { transform: translate3d(8px, 0, 0); }
+        }
+
+        /* Loader */
+        .loader {
+            border: 4px solid rgba(0, 255, 255, 0.1);
+            border-left-color: #0ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Keyboard hint */
+        .key-hint {
+            display: inline-block;
+            background: #222;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-family: monospace;
+            box-shadow: 0 2px 0 #111;
+        }
+
+        /* Touch Controls & Combo */
+        .touch-btn {
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #0ff;
+            color: #0ff;
+            border-radius: 50%;
+            width: 70px;
+            height: 70px;
+            font-size: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            user-select: none;
+            touch-action: none;
+        }
+        .touch-btn:active {
+            background: rgba(0, 255, 255, 0.6);
+            color: white;
+            box-shadow: 0 0 20px #0ff;
+        }
+        
+        #comboDisplay {
+            transition: all 0.2s;
+        }
+        .combo-active {
+            animation: pulseTarget 0.5s infinite alternate;
+            color: #ff0 !important;
+            text-shadow: 0 0 15px #ff0 !important;
+        }
+
+        /* Trivia Overlay */
+        #triviaOverlay {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 20, 50, 0.9);
+            border: 1px solid #0ff;
+            box-shadow: 0 0 20px rgba(0,255,255,0.4);
+            padding: 15px 30px;
+            border-radius: 12px;
+            text-align: center;
+            z-index: 18;
+            transition: opacity 0.5s;
+            opacity: 0;
+            pointer-events: none;
+            width: 80%;
+            max-w: 500px;
+        }
+
+        /* Feedback Table */
+        .feedback-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        .feedback-table th, .feedback-table td {
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+        }
+        .feedback-table th {
+            background: #222;
+            color: #0ff;
+        }
+
+        /* Center Timer Panel */
+        .timer-panel {
+            background: rgba(40, 0, 0, 0.8);
+            border: 2px solid #ff3366;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- Camera Feed -->
+    <video id="webcam" autoplay playsinline></video>
+    
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- Damage Effect -->
+    <div id="damage-overlay"></div>
+
+    <!-- HUD (Heads Up Display) -->
+    <div id="hud" class="hidden flex flex-col justify-between p-4 sm:p-6">
+        <div class="flex justify-between items-start w-full">
+            <!-- Score & Lives -->
+            <div class="hud-panel flex flex-col gap-2">
+                <div class="text-xl sm:text-2xl font-bold orbitron text-white">
+                    SKOR: <span id="scoreDisplay" class="text-glow text-cyan-300">0</span>
+                    <span id="comboDisplay" class="ml-2 text-sm text-gray-400">x1</span>
+                </div>
+                <div class="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                    NYAWA: 
+                    <div id="livesDisplay" class="flex text-red-500 text-glow-red">
+                        <!-- Hearts will be injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mission Target -->
+            <div class="mission-box rounded-xl px-6 py-3 text-center min-w-[200px]">
+                <div class="text-sm text-yellow-200 uppercase font-bold mb-1 tracking-wider">Misi Semasa: Kutip</div>
+                <div id="missionTargetDisplay" class="text-2xl sm:text-3xl font-black orbitron text-yellow-400 text-shadow">
+                    ASET
+                </div>
+            </div>
+
+            <!-- Timer -->
+            <div class="hud-panel timer-panel flex flex-col gap-1 items-center justify-center min-w-[120px]">
+                <div class="text-sm text-gray-300 uppercase font-bold">MASA</div>
+                <div class="text-3xl font-black orbitron text-white">
+                    <span id="timerDisplay">40</span>s
+                </div>
+            </div>
+            
+            <!-- Top Right Buttons -->
+            <div class="flex gap-2">
+                <!-- Mute Button -->
+                <button onclick="toggleMute()" id="btnMute" class="hud-panel hover:bg-cyan-900 transition p-2 cursor-pointer pointer-events-auto text-xl">
+                    🔊
+                </button>
+                <!-- Pause Button -->
+                <button onclick="pauseGame()" class="hud-panel hover:bg-cyan-900 transition p-2 cursor-pointer pointer-events-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-cyan-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Trivia Overlay -->
+        <div id="triviaOverlay">
+            <div id="triviaIcon" class="text-5xl sm:text-7xl mb-2 text-center animate-bounce"></div>
+            <h3 id="triviaTitle" class="orbitron text-xl text-yellow-300 mb-2">ASET</h3>
+            <p id="triviaDesc" class="text-white text-lg"></p>
+            <div id="restCountdown" class="mt-4 text-3xl font-bold text-cyan-400 orbitron hidden">Mula dalam: 10s</div>
+            <p id="restHandMsg" class="mt-2 text-sm text-green-300 hidden italic font-bold">🧘 Sila turunkan dan rehatkan tangan anda sebentar...</p>
+        </div>
+
+        <!-- Tracking Status -->
+        <div class="flex justify-center w-full mb-4">
+            <div id="trackingStatus" class="bg-black/60 px-4 py-1 rounded-full text-sm font-bold text-red-400 border border-red-500 transition-colors duration-300">
+                🔴 Menunggu Kamera...
+            </div>
+        </div>
+
+        <!-- Touch Controls -->
+        <div id="touchControls" class="absolute bottom-10 left-0 w-full px-4 sm:px-8 flex justify-between pointer-events-none lg:hidden">
+            <div class="flex gap-2">
+                <button id="btnLeft" class="touch-btn pointer-events-auto">⬅️</button>
+                <button id="btnRight" class="touch-btn pointer-events-auto">➡️</button>
+            </div>
+            <div class="flex gap-2">
+                <button id="btnUp" class="touch-btn pointer-events-auto">⬆️</button>
+                <button id="btnDown" class="touch-btn pointer-events-auto">⬇️</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen: Main Menu -->
+    <div id="screen-menu" class="ui-layer">
+        <h1 class="text-5xl sm:text-7xl font-black orbitron mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 text-center text-glow" style="-webkit-text-stroke: 1px rgba(255,255,255,0.2);">
+            ASTRO AKAUN
+        </h1>
+        <h2 class="text-xl sm:text-2xl text-cyan-200 mb-4 tracking-widest text-center">MISI KLASIFIKASI KSSM</h2>
+        
+        <div class="text-yellow-400 font-bold orbitron text-xl mb-6 text-glow">
+            Skor Tertinggi: <span id="highScoreDisplayUI">0</span>
+        </div>
+
+        <div class="bg-gray-900/80 border border-cyan-500/30 p-6 rounded-xl max-w-md text-center mb-6 backdrop-blur-md">
+            <p class="text-gray-300 mb-4 text-lg">
+                Kawal kapal angkasa (AR/Keyboard/Sentuh), elak asteroid, dan kutip jawapan yang betul!
+            </p>
+            <div class="flex justify-center gap-2 mb-4">
+                <button onclick="setDifficulty('Mudah')" id="diff-mudah" class="border border-cyan-500 text-cyan-300 px-4 py-1 rounded hover:bg-cyan-900 active-diff bg-cyan-900">Mudah</button>
+                <button onclick="setDifficulty('Sederhana')" id="diff-sed" class="border border-cyan-500 text-cyan-300 px-4 py-1 rounded hover:bg-cyan-900">Sederhana</button>
+                <button onclick="setDifficulty('Pakar')" id="diff-pakar" class="border border-cyan-500 text-cyan-300 px-4 py-1 rounded hover:bg-cyan-900">Pakar</button>
+            </div>
+        </div>
+
+        <button id="btn-start" class="neon-btn">MULA PENJELAJAHAN</button>
+    </div>
+
+    <!-- Screen: Loading AI -->
+    <div id="screen-loading" class="ui-layer hidden">
+        <h2 class="text-3xl orbitron text-cyan-300 mb-6 text-glow">Memuatkan Sistem AR...</h2>
+        <div class="loader mb-4"></div>
+        <p class="text-gray-400 text-center max-w-sm">
+            Sila benarkan akses kamera apabila diminta. Sistem sedang memuatkan model AI pengesanan tangan.
+        </p>
+    </div>
+
+    <!-- Screen: Tutorial/Calibration -->
+    <div id="screen-tutorial" class="ui-layer hidden">
+        <div class="bg-gray-900/90 border-2 border-cyan-500 p-8 rounded-2xl max-w-lg text-center shadow-[0_0_30px_rgba(0,255,255,0.2)]">
+            <h2 class="text-3xl orbitron text-yellow-400 mb-4">KALIBRASI & TUTORIAL</h2>
+            
+            <div class="flex justify-center mb-6">
+                <!-- SVG Icon for Hand -->
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse">
+                    <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path>
+                    <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"></path>
+                    <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"></path>
+                    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path>
+                </svg>
+            </div>
+
+            <p class="text-lg text-white mb-4">
+                1. Angkat sebelah tangan anda supaya kelihatan di kamera.<br>
+                2. Rangka biru akan muncul pada tangan anda.<br>
+                3. Gerakkan tangan ke <strong class="text-cyan-300">kiri dan kanan</strong> untuk mengawal kapal di bawah.
+            </p>
+            <p class="text-yellow-200 text-sm mb-6 bg-yellow-900/50 p-2 rounded">
+                Misi: Permainan mempunyai 5 tahap (Aset, Liabiliti, Ekuiti, Hasil, Belanja). Tangkap jawapan yang betul dalam masa 40 saat!
+            </p>
+
+            <button onclick="startGameplay()" class="neon-btn w-full">SAYA FAHAM, MULA!</button>
+        </div>
+    </div>
+
+    <!-- Screen: Ready Countdown -->
+    <div id="screen-ready" class="ui-layer hidden bg-transparent">
+        <h2 id="readyText" class="text-7xl sm:text-9xl orbitron text-cyan-300 mb-8 text-glow animate-pulse">SEDIA</h2>
+    </div>
+
+    <!-- Screen: Pause -->
+    <div id="screen-pause" class="ui-layer hidden">
+        <h2 class="text-5xl orbitron text-cyan-300 mb-8 text-glow">REHAT SEBENTAR</h2>
+        <button onclick="resumeGame()" class="neon-btn mb-4">TERUSKAN</button>
+        <button onclick="quitGame()" class="neon-btn neon-btn-red text-sm px-6 py-2">KEMBALI KE MENU</button>
+    </div>
+
+    <!-- Screen: Game Over -->
+    <div id="screen-gameover" class="ui-layer hidden">
+        <h2 class="text-5xl sm:text-6xl orbitron text-red-500 mb-2 text-glow-red">MISI GAGAL</h2>
+        <p class="text-xl text-gray-300 mb-4">Kapal anda musnah! Jangan berputus asa, mari cuba lagi!</p>
+        
+        <div class="bg-gray-800/90 border border-gray-600 rounded-xl p-4 mb-6 text-center max-w-lg w-full max-h-[50vh] overflow-y-auto">
+            <div class="text-gray-400 uppercase text-sm font-bold">Skor Akhir</div>
+            <div id="finalScore" class="text-5xl font-black orbitron text-cyan-400 mt-1 mb-4">0</div>
+            
+            <div id="feedbackContainer" class="hidden">
+                <h4 class="text-yellow-300 font-bold mb-2">Maklum Balas Kesilapan Anda:</h4>
+                <table class="feedback-table">
+                    <thead><tr><th>Item Ditangkap</th><th>Sepatutnya</th></tr></thead>
+                    <tbody id="feedbackTableBody"></tbody>
+                </table>
+            </div>
+            <div class="mt-4 text-sm text-gray-300" id="feedbackText"></div>
+        </div>
+
+        <button onclick="resetToMenu()" class="neon-btn">CUBA LAGI</button>
+    </div>
+
+    <!-- Screen: Victory -->
+    <div id="screen-victory" class="ui-layer hidden">
+        <h2 class="text-5xl sm:text-7xl orbitron text-yellow-400 mb-2 text-glow">TAHNIAH!</h2>
+        <p class="text-2xl text-cyan-100 mb-4 font-bold">Misi Galaksi Selesai 🚀</p>
+        <p class="text-lg text-gray-300 mb-6 max-w-md text-center">Anda telah berjaya mengklasifikasikan kesemua 5 tahap (Aset, Liabiliti, Ekuiti, Hasil, Belanja) dengan cemerlang!</p>
+        
+        <div class="bg-gray-800/90 border border-yellow-500 rounded-xl p-6 mb-8 text-center min-w-[250px] shadow-[0_0_20px_rgba(255,255,0,0.3)]">
+            <div class="text-gray-400 uppercase text-sm font-bold">Skor Akhir Anda</div>
+            <div id="victoryScore" class="text-6xl font-black orbitron text-yellow-300 mt-2 mb-2">0</div>
+        </div>
+
+        <button onclick="resetToMenu()" class="neon-btn">KEMBALI KE MENU</button>
+    </div>
+</div>
+
+<!-- Import MediaPipe Modules -->
+<script type="module">
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+    // --- GAME DATA: Akaun Classification ---
+    const akaunData = [
+        // Aset
+        { word: "Tunai", type: "ASET" }, { word: "Bank", type: "ASET" }, { word: "Premis", type: "ASET" }, 
+        { word: "Kenderaan", type: "ASET" }, { word: "Perabot", type: "ASET" }, { word: "Akaun Belum Terima", type: "ASET" }, 
+        { word: "Inventori", type: "ASET" }, { word: "Alatan Pejabat", type: "ASET" },
+        { word: "Kelengkapan", type: "ASET" }, { word: "Mesin", type: "ASET" }, { word: "Deposit Tetap", type: "ASET" }, 
+        { word: "Tunai Runcit", type: "ASET" }, { word: "Belanja Terdahulu", type: "ASET" }, { word: "Hasil Belum Terima", type: "ASET" },
+        // Liabiliti
+        { word: "Pinjaman", type: "LIABILITI" }, { word: "Akaun Belum Bayar", type: "LIABILITI" }, 
+        { word: "Overdraf Bank", type: "LIABILITI" }, { word: "Gadai Janji", type: "LIABILITI" },
+        { word: "Belanja Belum Bayar", type: "LIABILITI" }, { word: "Hasil Terdahulu", type: "LIABILITI" },
+        // Ekuiti
+        { word: "Modal", type: "EKUITI" }, { word: "Modal Awal", type: "EKUITI" }, 
+        { word: "Modal Tambahan", type: "EKUITI" }, { word: "Untung Bersih", type: "EKUITI" },
+        // Hasil
+        { word: "Jualan", type: "HASIL" }, { word: "Sewa Diterima", type: "HASIL" }, 
+        { word: "Komisen Diterima", type: "HASIL" }, { word: "Diskaun Diterima", type: "HASIL" }, { word: "Faedah Simpanan", type: "HASIL" },
+        { word: "Dividen Diterima", type: "HASIL" }, { word: "Faedah Diterima", type: "HASIL" }, { word: "Untung Pelupusan", type: "HASIL" },
+        // Belanja
+        { word: "Belian", type: "BELANJA" }, { word: "Gaji", type: "BELANJA" }, { word: "Kadar Bayaran", type: "BELANJA" }, 
+        { word: "Sewa Dibayar", type: "BELANJA" }, { word: "Insurans", type: "BELANJA" }, { word: "Diskaun Diberi", type: "BELANJA" },
+        { word: "Pengangkutan Masuk", type: "BELANJA" }, { word: "Angkutan Keluar", type: "BELANJA" },
+        { word: "Upah", type: "BELANJA" }, { word: "Caj Bank", type: "BELANJA" }, { word: "Faedah Pinjaman", type: "BELANJA" }, 
+        { word: "Hutang Lapuk", type: "BELANJA" }, { word: "Susut Nilai", type: "BELANJA" }, { word: "Promosi", type: "BELANJA" }, 
+        { word: "Alat Tulis", type: "BELANJA" }, { word: "Belanja Am", type: "BELANJA" }, { word: "Duti Import", type: "BELANJA" }
+    ];
+    const categoryTypes = ["ASET", "LIABILITI", "EKUITI", "HASIL", "BELANJA"];
+    const colors = {
+        "ASET": "#00ffcc", "LIABILITI": "#ff3366", "EKUITI": "#cc33ff", "HASIL": "#ffcc00", "BELANJA": "#ff6600"
+    };
+
+    const triviaData = {
+        "ASET": "Harta bernilai yang dimiliki perniagaan (cth: Tunai, Bank, Premis).",
+        "LIABILITI": "Hutang perniagaan kepada pihak luar (cth: Pinjaman).",
+        "EKUITI": "Pelaburan atau tuntutan pemilik (cth: Modal).",
+        "HASIL": "Pendapatan yang dijana (cth: Jualan, Sewa Diterima).",
+        "BELANJA": "Kos untuk kendalikan operasi (cth: Gaji, Belian)."
+    };
+    
+    const triviaIcons = {
+        "ASET": "💎", 
+        "LIABILITI": "💳", 
+        "EKUITI": "🏢", 
+        "HASIL": "💰", 
+        "BELANJA": "💸"
+    };
+
+    // --- AUDIO SYSTEM (Web Audio API) ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let isMuted = false;
+    
+    function playTone(freq, type, duration, vol=0.1, startTime=0) {
+        if(isMuted) return;
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const t = startTime || audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t);
+        
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + duration);
+    }
+
+    const sfx = {
+        good: () => {
+            playTone(600, 'sine', 0.1, 0.2);
+            setTimeout(() => playTone(800, 'sine', 0.15, 0.2), 100);
+        },
+        bad: () => {
+            playTone(150, 'sawtooth', 0.3, 0.3);
+            setTimeout(() => playTone(100, 'sawtooth', 0.4, 0.3), 150);
+        },
+        ui: () => playTone(400, 'square', 0.1, 0.05),
+        gameOver: () => {
+            playTone(200, 'sawtooth', 0.5, 0.3);
+            setTimeout(() => playTone(150, 'sawtooth', 0.5, 0.3), 300);
+            setTimeout(() => playTone(100, 'sawtooth', 1.0, 0.3), 600);
+        },
+        powerup: () => {
+            playTone(400, 'sine', 0.1, 0.2);
+            setTimeout(() => playTone(600, 'sine', 0.1, 0.2), 100);
+            setTimeout(() => playTone(800, 'sine', 0.2, 0.2), 200);
+        }
+    };
+
+    // --- BGM SEQUENCER (Star Wars Imperial March Motif) ---
+    const notes = { G3: 196.00, Eb3: 155.56, Bb3: 233.08, D4: 293.66, Eb4: 311.13, Gb3: 185.00 };
+    const bgmSeq = [
+        { n: 'G3', d: 0.5 }, { n: 'G3', d: 0.5 }, { n: 'G3', d: 0.5 },
+        { n: 'Eb3', d: 0.35 }, { n: 'Bb3', d: 0.15 }, { n: 'G3', d: 0.5 },
+        { n: 'Eb3', d: 0.35 }, { n: 'Bb3', d: 0.15 }, { n: 'G3', d: 1.0 }
+    ];
+    let bgmTime = 0;
+    let bgmIndex = 0;
+    let bgmTimeoutId = null;
+    let isBgmPlaying = false;
+
+    function scheduleBGM() {
+        if (!isBgmPlaying || isMuted) return;
+        // Schedule ahead
+        while (bgmTime < audioCtx.currentTime + 0.2) {
+            let note = bgmSeq[bgmIndex];
+            playTone(notes[note.n], 'sawtooth', note.d * 0.7, 0.04, bgmTime); // Low volume brass sound
+            bgmTime += note.d * 0.8; // tempo control
+            bgmIndex = (bgmIndex + 1) % bgmSeq.length;
+        }
+        bgmTimeoutId = setTimeout(scheduleBGM, 50);
+    }
+
+    window.toggleMute = () => {
+        isMuted = !isMuted;
+        document.getElementById('btnMute').innerText = isMuted ? '🔇' : '🔊';
+        if (!isMuted && gameState === 'PLAYING') {
+            bgmTime = audioCtx.currentTime + 0.1;
+            scheduleBGM();
+        }
+    };
+
+    function startBGM() {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        isBgmPlaying = true;
+        bgmIndex = 0;
+        bgmTime = audioCtx.currentTime + 0.1;
+        scheduleBGM();
+    }
+    
+    function stopBGM() {
+        isBgmPlaying = false;
+        clearTimeout(bgmTimeoutId);
+    }
+
+    // --- GAME VARIABLES ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    
+    let gameState = 'MENU'; // MENU, LOADING, TUTORIAL, PLAYING, PAUSE, GAMEOVER, VICTORY
+    let score = 0;
+    let highScore = localStorage.getItem('astroAkaunHighScore') || 0;
+    let lives = 3;
+    let maxLives = 3;
+    let correctCatchesInRow = 0;
+    let comboMultiplier = 1;
+    let gameSpeed = 1.0;
+    
+    // Level & Timer System
+    const levelSequence = ["ASET", "LIABILITI", "EKUITI", "HASIL", "BELANJA"];
+    let currentLevelIdx = 0;
+    let currentTargetType = levelSequence[0];
+    let timeLeft = 40.0;
+    let isResting = false;
+    let lastTimestamp = performance.now();
+    
+    let difficulty = 'Mudah'; // Mudah, Sederhana, Pakar
+    let baseSpeed = 1.0;
+    let obstacleChance = 0.0; // Asteroids
+    let wrongCatches = [];
+    
+    let activePowerups = {
+        shield: false,
+        magnet: false,
+        slowmo: false
+    };
+    let warpSpeed = false;
+    let triviaTimeout;
+
+    let lastTime = 0;
+    let animationFrameId;
+
+    // Entities
+    let player = { x: 0, y: 0, width: 80, height: 80, targetX: 0, targetY: 0 };
+    let items = [];
+    let particles = [];
+    let stars = [];
+    let nebulas = [];
+    let rings = []; // Animasi Gelang
+
+    // Controls
+    let handX = 0.5; // Normalized 0-1
+    let usingHand = false;
+    let keys = { left: false, right: false, up: false, down: false };
+    let mouseX = null, mouseY = null;
+
+    // AI/Camera setup
+    const video = document.getElementById('webcam');
+    let handLandmarker = undefined;
+    let webcamRunning = false;
+    let lastVideoTime = -1;
+
+    // DOM Elements
+    const screens = {
+        menu: document.getElementById('screen-menu'),
+        loading: document.getElementById('screen-loading'),
+        tutorial: document.getElementById('screen-tutorial'),
+        ready: document.getElementById('screen-ready'),
+        pause: document.getElementById('screen-pause'),
+        gameover: document.getElementById('screen-gameover'),
+        victory: document.getElementById('screen-victory')
+    };
+    const hud = document.getElementById('hud');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const livesDisplay = document.getElementById('livesDisplay');
+    const missionTargetDisplay = document.getElementById('missionTargetDisplay');
+    const trackingStatus = document.getElementById('trackingStatus');
+    const damageOverlay = document.getElementById('damage-overlay');
+    const comboDisplay = document.getElementById('comboDisplay');
+    const highScoreDisplayUI = document.getElementById('highScoreDisplayUI');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const restCountdown = document.getElementById('restCountdown');
+
+    // --- INITIALIZATION ---
+    function resizeCanvas() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        player.y = height - 120;
+        player.targetY = height - 120;
+        if(gameState === 'MENU') {
+            player.x = width / 2;
+            player.targetX = width / 2;
+            initStars();
+        }
+    }
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(resizeCanvas, 200); // Allow time for device to rotate
+    });
+    resizeCanvas();
+    highScoreDisplayUI.innerText = highScore;
+
+    // Ensure Audio works on Mobile (iOS/Android Safari & Chrome policy)
+    document.body.addEventListener('touchstart', function() {
+        if(audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }, { once: true });
+    document.body.addEventListener('click', function() {
+        if(audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }, { once: true });
+
+    // Touch controls setup
+    const btnLeft = document.getElementById('btnLeft');
+    const btnRight = document.getElementById('btnRight');
+    const btnUp = document.getElementById('btnUp');
+    const btnDown = document.getElementById('btnDown');
+    
+    btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); keys.left = true; usingHand=false; });
+    btnLeft.addEventListener('touchend', (e) => { e.preventDefault(); keys.left = false; });
+    btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); keys.right = true; usingHand=false; });
+    btnRight.addEventListener('touchend', (e) => { e.preventDefault(); keys.right = false; });
+    btnUp.addEventListener('touchstart', (e) => { e.preventDefault(); keys.up = true; usingHand=false; });
+    btnUp.addEventListener('touchend', (e) => { e.preventDefault(); keys.up = false; });
+    btnDown.addEventListener('touchstart', (e) => { e.preventDefault(); keys.down = true; usingHand=false; });
+    btnDown.addEventListener('touchend', (e) => { e.preventDefault(); keys.down = false; });
+    
+    // Also support mouse down for testing on desktop
+    btnLeft.addEventListener('mousedown', () => { keys.left = true; usingHand=false; });
+    btnLeft.addEventListener('mouseup', () => keys.left = false);
+    btnRight.addEventListener('mousedown', () => { keys.right = true; usingHand=false; });
+    btnRight.addEventListener('mouseup', () => keys.right = false);
+    btnUp.addEventListener('mousedown', () => { keys.up = true; usingHand=false; });
+    btnUp.addEventListener('mouseup', () => keys.up = false);
+    btnDown.addEventListener('mousedown', () => { keys.down = true; usingHand=false; });
+    btnDown.addEventListener('mouseup', () => keys.down = false);
+
+    window.setDifficulty = (level) => {
+        sfx.ui();
+        difficulty = level;
+        document.getElementById('diff-mudah').classList.remove('bg-cyan-900');
+        document.getElementById('diff-sed').classList.remove('bg-cyan-900');
+        document.getElementById('diff-pakar').classList.remove('bg-cyan-900');
+        
+        if(level === 'Mudah') {
+            document.getElementById('diff-mudah').classList.add('bg-cyan-900');
+            baseSpeed = 0.8; obstacleChance = 0.0;
+        } else if(level === 'Sederhana') {
+            document.getElementById('diff-sed').classList.add('bg-cyan-900');
+            baseSpeed = 1.2; obstacleChance = 0.1;
+        } else if(level === 'Pakar') {
+            document.getElementById('diff-pakar').classList.add('bg-cyan-900');
+            baseSpeed = 1.6; obstacleChance = 0.2;
+        }
+    };
+
+    // Attach button listeners to global scope for HTML onclick
+    window.pauseGame = () => { if(gameState === 'PLAYING') { gameState = 'PAUSE'; stopBGM(); sfx.ui(); updateScreens(); } };
+    window.resumeGame = () => { if(gameState === 'PAUSE') { gameState = 'PLAYING'; startBGM(); sfx.ui(); lastTimestamp = performance.now(); updateScreens(); requestAnimationFrame(gameLoop); } };
+    window.quitGame = () => { stopBGM(); sfx.ui(); resetToMenu(); };
+    window.resetToMenu = () => { stopBGM(); sfx.ui(); gameState = 'MENU'; updateScreens(); items=[]; particles=[]; };
+    window.startGameplay = () => { 
+        sfx.ui(); 
+        gameState = 'READY'; 
+        updateScreens(); 
+        resetGameStats();
+        
+        let count = 3;
+        const readyText = document.getElementById('readyText');
+        readyText.innerText = "SEDIA";
+        readyText.className = "text-7xl sm:text-9xl orbitron text-cyan-300 mb-8 text-glow animate-pulse";
+        
+        let countdownInterval = setInterval(() => {
+            if (count > 0) {
+                readyText.innerText = count;
+                sfx.ui(); // short beep
+                count--;
+            } else if (count === 0) {
+                readyText.innerText = "MULA!";
+                readyText.classList.replace('text-cyan-300', 'text-yellow-400');
+                sfx.good(); // higher beep
+                count--;
+            } else {
+                clearInterval(countdownInterval);
+                gameState = 'PLAYING';
+                updateScreens();
+                startBGM();
+                lastTimestamp = performance.now();
+                requestAnimationFrame(gameLoop);
+            }
+        }, 800);
+    };
+
+    document.getElementById('btn-start').addEventListener('click', async () => {
+        sfx.ui();
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        gameState = 'LOADING';
+        updateScreens();
+        
+        try {
+            // Init AI & Camera only when start clicked
+            if(!handLandmarker) {
+                await initializeAI();
+            }
+            if(!webcamRunning) {
+                await enableCam();
+            }
+            
+            // Start AR processing loop if not already running
+            if(webcamRunning && handLandmarker) {
+                predictWebcam();
+            }
+        } catch (err) {
+            console.error("Gagal memuat turun fail AI atau akses kamera:", err);
+            const trackingStatus = document.getElementById('trackingStatus');
+            if (trackingStatus) {
+                trackingStatus.innerHTML = '🔴 Model AR Gagal Dimuatkan. Guna Papan Kekunci/Sentuh';
+            }
+        }
+        
+        gameState = 'TUTORIAL';
+        updateScreens();
+    });
+
+    function updateScreens() {
+        Object.values(screens).forEach(el => el.classList.add('hidden'));
+        hud.classList.add('hidden');
+        
+        if(gameState === 'MENU') screens.menu.classList.remove('hidden');
+        else if(gameState === 'LOADING') screens.loading.classList.remove('hidden');
+        else if(gameState === 'TUTORIAL') screens.tutorial.classList.remove('hidden');
+        else if(gameState === 'READY') screens.ready.classList.remove('hidden');
+        else if(gameState === 'PAUSE') screens.pause.classList.remove('hidden');
+        else if(gameState === 'GAMEOVER') screens.gameover.classList.remove('hidden');
+        else if(gameState === 'VICTORY') screens.victory.classList.remove('hidden');
+        
+        if(gameState === 'PLAYING' || gameState === 'PAUSE') {
+            hud.classList.remove('hidden');
+        }
+    }
+
+    // --- AI & CAMERA LOGIC ---
+    async function initializeAI() {
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+        );
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 1
+        });
+    }
+
+    async function enableCam() {
+        if (!handLandmarker) return;
+        try {
+            // Updated constraints for better cross-device compatibility (Mobile & Desktop)
+            const constraints = { 
+                video: { 
+                    facingMode: "user",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                } 
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            
+            return new Promise((resolve) => {
+                video.addEventListener("loadeddata", () => {
+                    webcamRunning = true;
+                    resolve();
+                });
+            });
+        } catch (err) {
+            console.error("Camera access denied or failed:", err);
+            alert("Sila benarkan akses kamera untuk menggunakan kawalan tangan. Anda masih boleh menggunakan Keyboard (Kiri/Kanan) atau Mouse.");
+            // Proceed anyway, fallback controls will work
+        }
+    }
+
+    let results = undefined;
+    async function predictWebcam() {
+        if (!webcamRunning || !handLandmarker) return;
+        
+        // Only run prediction if game is active, in tutorial, or in ready countdown
+        if(gameState !== 'PLAYING' && gameState !== 'TUTORIAL' && gameState !== 'READY') {
+            requestAnimationFrame(predictWebcam);
+            return;
+        }
+
+        let startTimeMs = performance.now();
+        if (lastVideoTime !== video.currentTime) {
+            lastVideoTime = video.currentTime;
+            results = handLandmarker.detectForVideo(video, startTimeMs);
+        }
+
+        // Process results
+        if (results && results.landmarks && results.landmarks.length > 0) {
+            usingHand = true;
+            updateTrackingStatus(true);
+            
+            const landmarks = results.landmarks[0];
+            // Use middle finger MCP (landmark 9) for stable center tracking
+            const centerPoint = landmarks[9]; 
+            
+            // IMPORTANT: The video is mirrored via CSS (scaleX(-1)).
+            let rawX = centerPoint.x;
+            let targetNormalizedX = 1.0 - rawX; 
+            let targetNormalizedY = centerPoint.y;
+            
+            // Apply a slight deadzone and smoothing
+            handX = targetNormalizedX;
+            player.targetX = handX * width;
+            player.targetY = targetNormalizedY * height;
+
+        } else {
+            updateTrackingStatus(false);
+        }
+
+        // Call this function again to keep predicting when the browser is ready
+        requestAnimationFrame(predictWebcam);
+    }
+
+    function updateTrackingStatus(detected) {
+        if(!trackingStatus) return;
+        if(detected) {
+            trackingStatus.innerHTML = '🟢 AR Aktif (Tangan Dikesan)';
+            trackingStatus.className = 'bg-black/60 px-4 py-1 rounded-full text-sm font-bold text-green-400 border border-green-500 transition-colors duration-300';
+        } else {
+            trackingStatus.innerHTML = '🔴 Tangan Tidak Dikesan';
+            trackingStatus.className = 'bg-black/60 px-4 py-1 rounded-full text-sm font-bold text-red-400 border border-red-500 transition-colors duration-300';
+        }
+    }
+
+    // --- FALLBACK CONTROLS ---
+    window.addEventListener('keydown', (e) => {
+        if(e.code === 'ArrowLeft') { keys.left = true; usingHand = false; }
+        if(e.code === 'ArrowRight') { keys.right = true; usingHand = false; }
+        if(e.code === 'ArrowUp') { keys.up = true; usingHand = false; }
+        if(e.code === 'ArrowDown') { keys.down = true; usingHand = false; }
+        if(e.code === 'Escape' || e.code === 'KeyP') {
+            if(gameState==='PLAYING') pauseGame();
+            else if(gameState==='PAUSE') resumeGame();
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        if(e.code === 'ArrowLeft') keys.left = false;
+        if(e.code === 'ArrowRight') keys.right = false;
+        if(e.code === 'ArrowUp') keys.up = false;
+        if(e.code === 'ArrowDown') keys.down = false;
+    });
+    canvas.addEventListener('mousemove', (e) => {
+        if(!usingHand) { mouseX = e.clientX; mouseY = e.clientY; }
+    });
+    canvas.addEventListener('touchmove', (e) => {
+        if(!usingHand && e.touches.length > 0) {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+            e.preventDefault(); // Prevent scrolling
+        }
+    }, {passive: false});
+
+    // --- GAMEPLAY MECHANICS ---
+    function resetGameStats() {
+        score = 0;
+        lives = maxLives;
+        gameSpeed = baseSpeed;
+        currentLevelIdx = 0;
+        timeLeft = 40.0;
+        isResting = false;
+        lastTimestamp = performance.now();
+        correctCatchesInRow = 0;
+        comboMultiplier = 1;
+        wrongCatches = [];
+        items = [];
+        particles = [];
+        rings = [];
+        warpSpeed = false;
+        activePowerups = { shield: false, magnet: false, slowmo: false };
+        player.x = width / 2;
+        player.targetX = width / 2;
+        player.y = height - 120;
+        player.targetY = height - 120;
+        document.getElementById('feedbackContainer').classList.add('hidden');
+        document.getElementById('timerDisplay').innerText = "40";
+        restCountdown.classList.add('hidden');
+        startLevel();
+        updateHUD();
+    }
+
+    function startLevel() {
+        currentTargetType = levelSequence[currentLevelIdx];
+        missionTargetDisplay.innerText = currentTargetType;
+        missionTargetDisplay.style.color = colors[currentTargetType];
+        
+        // Show Trivia at start of level
+        const overlay = document.getElementById('triviaOverlay');
+        document.getElementById('triviaIcon').innerText = triviaIcons[currentTargetType];
+        document.getElementById('triviaTitle').innerText = "TAHAP " + (currentLevelIdx + 1) + ": " + currentTargetType;
+        document.getElementById('triviaDesc').innerText = triviaData[currentTargetType];
+        restCountdown.classList.add('hidden');
+        document.getElementById('restHandMsg').classList.add('hidden');
+        
+        overlay.style.opacity = 1;
+        clearTimeout(triviaTimeout);
+        triviaTimeout = setTimeout(() => { overlay.style.opacity = 0; }, 3000);
+
+        // Add a visual flash to the mission box
+        missionTargetDisplay.parentElement.classList.remove('animate-pulse');
+        void missionTargetDisplay.parentElement.offsetWidth; // trigger reflow
+        missionTargetDisplay.parentElement.classList.add('animate-pulse');
+        
+        sfx.ui();
+    }
+
+    function beginRest() {
+        isResting = true;
+        timeLeft = 10.0;
+        items = []; // Clear falling items
+        
+        // Setup trivia for the NEXT level
+        const nextLevelType = levelSequence[currentLevelIdx + 1];
+        const overlay = document.getElementById('triviaOverlay');
+        document.getElementById('triviaIcon').innerText = triviaIcons[nextLevelType];
+        document.getElementById('triviaTitle').innerText = "SETERUSNYA: " + nextLevelType;
+        document.getElementById('triviaDesc').innerText = triviaData[nextLevelType];
+        restCountdown.classList.remove('hidden');
+        document.getElementById('restHandMsg').classList.remove('hidden');
+        
+        overlay.style.opacity = 1;
+        clearTimeout(triviaTimeout); // Prevent it from fading out during rest
+    }
+
+    function updateHUD() {
+        scoreDisplay.innerText = score;
+        
+        if(comboMultiplier > 1) {
+            comboDisplay.innerText = `x${comboMultiplier}`;
+            comboDisplay.classList.add('combo-active');
+        } else {
+            comboDisplay.innerText = `x1`;
+            comboDisplay.classList.remove('combo-active');
+        }
+
+        let heartsHTML = '';
+        for(let i=0; i<maxLives; i++) {
+            if(i < lives) heartsHTML += '❤️';
+            else heartsHTML += '<span class="text-gray-600 opacity-50">🖤</span>';
+        }
+        if(activePowerups.shield) heartsHTML += ' 🛡️'; // show shield icon
+        livesDisplay.innerHTML = heartsHTML;
+    }
+
+    function spawnItem() {
+        let rand = Math.random();
+        
+        // Spawn Obstacle (Asteroid)
+        if(rand < obstacleChance) {
+            let size = Math.random() * 30 + 40;
+            items.push({
+                x: Math.random() * (width - size),
+                y: -100,
+                width: size, height: size,
+                type: 'ASTEROID', speed: (Math.random() * 2 + 3) * gameSpeed,
+                rotation: Math.random() * Math.PI, rotSpeed: (Math.random()-0.5)*0.1
+            });
+            return;
+        }
+
+        // Spawn Powerup (5% chance)
+        if(rand > 0.95) {
+            const types = ['SHIELD', 'MAGNET', 'SLOWMO'];
+            items.push({
+                x: Math.random() * (width - 40),
+                y: -100,
+                width: 40, height: 40,
+                type: types[Math.floor(Math.random()*types.length)],
+                speed: 3 * gameSpeed,
+                rotation: 0
+            });
+            return;
+        }
+
+        // Spawn Question Block
+        let dataObj;
+        if(Math.random() < 0.4) {
+            // Force correct type
+            const correctItems = akaunData.filter(d => d.type === currentTargetType);
+            dataObj = correctItems[Math.floor(Math.random() * correctItems.length)];
+        } else {
+            // Random
+            dataObj = akaunData[Math.floor(Math.random() * akaunData.length)];
+        }
+
+        let size = 50 + dataObj.word.length * 4; // Width based on text length
+        let padding = 20;
+        let xPos = Math.random() * (width - size - padding*2) + padding;
+        
+        items.push({
+            x: xPos,
+            y: -100,
+            width: size,
+            height: 40,
+            text: dataObj.word,
+            type: dataObj.type,
+            isQuestion: true,
+            speed: (Math.random() * 2 + 2.5) * gameSpeed,
+            color: colors[dataObj.type] || "#fff",
+            rotation: (Math.random() - 0.5) * 0.1
+        });
+    }
+
+    function activatePowerup(type) {
+        sfx.powerup();
+        if(type === 'SHIELD') {
+            activePowerups.shield = true;
+            createFloatingText("PERISAI AKTIF!", player.x, player.y - 50, "#0ff");
+        } else if(type === 'MAGNET') {
+            activePowerups.magnet = true;
+            createFloatingText("MAGNET AKTIF!", player.x, player.y - 50, "#f0f");
+            setTimeout(() => { activePowerups.magnet = false; }, 8000);
+        } else if(type === 'SLOWMO') {
+            activePowerups.slowmo = true;
+            let oldSpeed = gameSpeed;
+            gameSpeed = baseSpeed * 0.5; // Slow down
+            createFloatingText("MASA PERLAHAN!", player.x, player.y - 50, "#fff");
+            setTimeout(() => { 
+                activePowerups.slowmo = false; 
+                gameSpeed = oldSpeed; 
+            }, 5000);
+        }
+        updateHUD();
+    }
+
+    function takeDamage(itemObj = null) {
+        if(activePowerups.shield) {
+            activePowerups.shield = false; // break shield
+            sfx.bad();
+            createFloatingText("PERISAI PECAH!", player.x, player.y - 50, "#0ff");
+            createParticles(player.x, player.y, "#0ff");
+            updateHUD();
+            return; // no damage taken
+        }
+
+        lives--;
+        correctCatchesInRow = 0;
+        comboMultiplier = 1;
+        warpSpeed = false;
+        sfx.bad();
+        updateHUD();
+        
+        if(itemObj && itemObj.isQuestion) {
+            wrongCatches.push(itemObj);
+        }
+
+        // Screen shake and red flash
+        document.getElementById('game-container').classList.add('shake');
+        damageOverlay.style.opacity = 1;
+        
+        setTimeout(() => {
+            document.getElementById('game-container').classList.remove('shake');
+            damageOverlay.style.opacity = 0;
+        }, 400);
+
+        if(lives <= 0) {
+            gameState = 'GAMEOVER';
+            stopBGM();
+            sfx.gameOver();
+            
+            if(score > highScore) {
+                highScore = score;
+                localStorage.setItem('astroAkaunHighScore', highScore);
+                highScoreDisplayUI.innerText = highScore;
+            }
+
+            document.getElementById('finalScore').innerText = score;
+            
+            // Populate feedback table
+            if(wrongCatches.length > 0) {
+                document.getElementById('feedbackContainer').classList.remove('hidden');
+                const tbody = document.getElementById('feedbackTableBody');
+                tbody.innerHTML = '';
+                // Show up to 5 mistakes
+                wrongCatches.slice(-5).forEach(mistake => {
+                    tbody.innerHTML += `<tr><td>${mistake.text}</td><td><span style="color:${colors[mistake.type]}">${mistake.type}</span></td></tr>`;
+                });
+            } else {
+                document.getElementById('feedbackContainer').classList.add('hidden');
+            }
+
+            // Generate simple feedback based on target type when failed
+            let feedback = "Teruskan usaha, kegagalan hari ini adalah kunci kejayaan hari esok!";
+            if(currentTargetType === "ASET") feedback = "Motivasi: Aset ialah harta benda syarikat (cth: Tunai, Kenderaan). Cuba kumpul sebanyak mungkin!";
+            else if(currentTargetType === "LIABILITI") feedback = "Motivasi: Liabiliti ialah hutang perniagaan (cth: Pinjaman). Anda pasti boleh mengecamnya di pusingan seterusnya.";
+            else if(currentTargetType === "HASIL") feedback = "Motivasi: Hasil ialah pendapatan (cth: Jualan, Sewa Diterima). Maju terus!";
+            else if(currentTargetType === "BELANJA") feedback = "Motivasi: Belanja ialah kos operasi (cth: Gaji, Belian). Teruskan membaca DSKP!";
+            else if(currentTargetType === "EKUITI") feedback = "Motivasi: Ekuiti ialah pelaburan pemilik (Modal). Usaha tangga kejayaan!";
+            
+            document.getElementById('feedbackText').innerText = feedback;
+            updateScreens();
+        }
+    }
+
+    function createParticles(x, y, color) {
+        for(let i=0; i<15; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 1.0,
+                color: color
+            });
+        }
+    }
+
+    // --- GRAPHICS RENDERING ---
+    function initStars() {
+        stars = [];
+        for(let i=0; i<100; i++) {
+            stars.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                size: Math.random() * 2,
+                speed: Math.random() * 3 + 1
+            });
+        }
+        
+        nebulas = [];
+        for(let i=0; i<4; i++) {
+            nebulas.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                radius: Math.random() * 250 + 150,
+                r: Math.floor(Math.random()*100),
+                g: Math.floor(Math.random()*50 + 50),
+                b: Math.floor(Math.random()*150 + 100),
+                speed: Math.random() * 0.3 + 0.1
+            });
+        }
+    }
+
+    function drawStars() {
+        // Draw Nebulas Background
+        nebulas.forEach(n => {
+            let grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.radius);
+            grad.addColorStop(0, `rgba(${n.r}, ${n.g}, ${n.b}, 0.15)`);
+            grad.addColorStop(1, `rgba(${n.r}, ${n.g}, ${n.b}, 0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.radius, 0, Math.PI*2);
+            ctx.fill();
+            
+            if(gameState === 'PLAYING' || gameState === 'MENU') n.y += n.speed * (gameState === 'PLAYING' ? gameSpeed : 0.2);
+            if(n.y - n.radius > height) {
+                n.y = -n.radius;
+                n.x = Math.random() * width;
+            }
+        });
+
+        ctx.fillStyle = "#ffffff";
+        stars.forEach(star => {
+            ctx.globalAlpha = Math.random() * 0.5 + 0.5;
+            
+            // Warp speed effect elongates stars
+            if(warpSpeed && gameState === 'PLAYING') {
+                ctx.fillRect(star.x, star.y, star.size, star.size * 5);
+                star.y += star.speed * gameSpeed * 2;
+            } else {
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+                if(gameState === 'PLAYING' || gameState === 'MENU') {
+                    star.y += star.speed * (gameState === 'PLAYING' ? gameSpeed : 0.2);
+                }
+            }
+            
+            if(star.y > height) {
+                star.y = 0;
+                star.x = Math.random() * width;
+            }
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    function drawPlayer() {
+        // Smooth movement (LERP)
+        if(!usingHand) {
+            let moveSpeed = 10;
+            if(keys.left) player.targetX -= moveSpeed;
+            if(keys.right) player.targetX += moveSpeed;
+            if(keys.up) player.targetY -= moveSpeed;
+            if(keys.down) player.targetY += moveSpeed;
+            
+            if(mouseX !== null && mouseY !== null && (!keys.left && !keys.right && !keys.up && !keys.down)) {
+                player.targetX = mouseX;
+                player.targetY = mouseY;
+            }
+        }
+        
+        // Constrain target
+        player.targetX = Math.max(player.width/2, Math.min(width - player.width/2, player.targetX));
+        player.targetY = Math.max(player.height/2, Math.min(height - player.height/2, player.targetY));
+        
+        // Lerp actual position
+        player.x += (player.targetX - player.x) * 0.2;
+        player.y += (player.targetY - player.y) * 0.2;
+
+        ctx.save();
+        ctx.translate(player.x, player.y);
+        
+        // Tilt effect based on movement velocity (Horizontal only)
+        let tilt = (player.targetX - player.x) * 0.05;
+        // Limit tilt
+        tilt = Math.max(-0.5, Math.min(0.5, tilt));
+        ctx.rotate(tilt);
+
+        // Shield Aura
+        if(activePowerups.shield) {
+            ctx.beginPath();
+            ctx.arc(0, 0, player.width/1.2, 0, Math.PI*2);
+            ctx.fillStyle = "rgba(0, 255, 255, 0.2)";
+            ctx.strokeStyle = "rgba(0, 255, 255, 0.8)";
+            ctx.lineWidth = 3;
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // --- REALISTIC SPACESHIP DESIGN ---
+        let pW = player.width;
+        let pH = player.height;
+
+        // Shadow/Glow
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "#0ff";
+
+        // Engine Flames (Dynamic)
+        if(gameState === 'PLAYING') {
+            ctx.fillStyle = "#ff5500";
+            ctx.shadowColor = "#ff0000";
+            ctx.beginPath();
+            // Left flame
+            ctx.ellipse(-pW/4, pH/2 - 5, 6, 15 + Math.random()*15, 0, 0, Math.PI*2);
+            // Right flame
+            ctx.ellipse(pW/4, pH/2 - 5, 6, 15 + Math.random()*15, 0, 0, Math.PI*2);
+            ctx.fill();
+            // Inner hot core
+            ctx.fillStyle = "#ffff00";
+            ctx.beginPath();
+            ctx.ellipse(-pW/4, pH/2 - 5, 3, 8 + Math.random()*5, 0, 0, Math.PI*2);
+            ctx.ellipse(pW/4, pH/2 - 5, 3, 8 + Math.random()*5, 0, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        ctx.shadowBlur = 0; // reset for rigid body
+
+        // Swept-back Wings
+        ctx.fillStyle = "#112233"; // Dark metal
+        ctx.strokeStyle = "#00ffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -pH/4);
+        ctx.lineTo(-pW/2, pH/2);
+        ctx.lineTo(-pW/3, pH/2 + 5);
+        ctx.lineTo(0, pH/4);
+        ctx.lineTo(pW/3, pH/2 + 5);
+        ctx.lineTo(pW/2, pH/2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Main Fuselage Gradient
+        let bodyGrad = ctx.createLinearGradient(0, -pH/2, 0, pH/2);
+        bodyGrad.addColorStop(0, "#e0e0e0");
+        bodyGrad.addColorStop(0.5, "#8090a0");
+        bodyGrad.addColorStop(1, "#304050");
+
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        // Pointy nose to rounded back
+        ctx.moveTo(0, -pH/2);
+        ctx.bezierCurveTo(-pW/3, -pH/4, -pW/3, pH/2, -pW/4, pH/2);
+        ctx.lineTo(pW/4, pH/2);
+        ctx.bezierCurveTo(pW/3, pH/2, pW/3, -pH/4, 0, -pH/2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Thruster nozzles
+        ctx.fillStyle = "#222";
+        ctx.fillRect(-pW/4 - 6, pH/2 - 5, 12, 8);
+        ctx.fillRect(pW/4 - 6, pH/2 - 5, 12, 8);
+
+        // Cockpit Window (Cyan glass)
+        let glassGrad = ctx.createLinearGradient(0, -pH/4, 0, 0);
+        glassGrad.addColorStop(0, "#ffffff");
+        glassGrad.addColorStop(1, "#00ffff");
+        
+        ctx.fillStyle = glassGrad;
+        ctx.beginPath();
+        ctx.ellipse(0, -pH/6, pW/8, pH/6, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    function drawHandSkeleton() {
+        if(!results || !results.landmarks || results.landmarks.length === 0 || (gameState !== 'PLAYING' && gameState !== 'TUTORIAL' && gameState !== 'READY')) return;
+        
+        ctx.save();
+        const landmarks = results.landmarks[0];
+        
+        // Draw connections
+        ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
+        ctx.lineWidth = 2;
+        
+        const HAND_CONNECTIONS = [
+            [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+            [0, 5], [5, 6], [6, 7], [7, 8], // Index
+            [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+            [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+            [13, 17], [0, 17], [17, 18], [18, 19], [19, 20] // Pinky & Palm
+        ];
+
+        HAND_CONNECTIONS.forEach(conn => {
+            const p1 = landmarks[conn[0]];
+            const p2 = landmarks[conn[1]];
+            
+            ctx.beginPath();
+            // Apply flip: X = (1 - p.x) * width
+            ctx.moveTo((1 - p1.x) * width, p1.y * height);
+            ctx.lineTo((1 - p2.x) * width, p2.y * height);
+            ctx.stroke();
+        });
+
+        // Draw joints
+        ctx.fillStyle = "#0ff";
+        landmarks.forEach(lm => {
+            ctx.beginPath();
+            ctx.arc((1 - lm.x) * width, lm.y * height, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+        
+        // Highlight pointer (Index tip)
+        const indexTip = landmarks[8];
+        ctx.fillStyle = "#ff0";
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#ff0";
+        ctx.beginPath();
+        ctx.arc((1 - indexTip.x) * width, indexTip.y * height, 8, 0, 2 * Math.PI);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function updateAndDrawItems() {
+        for(let i = items.length - 1; i >= 0; i--) {
+            let item = items[i];
+            
+            // Magnet Powerup Effect logic: Pull correct items towards player
+            if(activePowerups.magnet && item.isQuestion && item.type === currentTargetType && item.y > 0) {
+                // Lerp item X to player X
+                item.x += (player.x - (item.x + item.width/2)) * 0.05;
+            }
+
+            // Move
+            item.y += item.speed;
+            
+            if(item.type === 'ASTEROID') {
+                item.rotation += item.rotSpeed;
+            } else {
+                item.rotation += 0.01;
+            }
+
+            // Draw
+            ctx.save();
+            
+            if(item.type === 'ASTEROID') {
+                ctx.translate(item.x + item.width/2, item.y + item.height/2);
+                ctx.rotate(item.rotation);
+                
+                // Draw rock
+                ctx.fillStyle = "#555";
+                ctx.strokeStyle = "#333";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                // Rough circle
+                for(let j=0; j<6; j++) {
+                    let ang = j * (Math.PI*2/6);
+                    let rad = item.width/2 - Math.random()*5;
+                    let pX = Math.cos(ang) * rad;
+                    let pY = Math.sin(ang) * rad;
+                    if(j===0) ctx.moveTo(pX, pY);
+                    else ctx.lineTo(pX, pY);
+                }
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                
+                // Craters
+                ctx.fillStyle = "#333";
+                ctx.beginPath(); ctx.arc(-5, -5, item.width/8, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(10, 5, item.width/10, 0, Math.PI*2); ctx.fill();
+
+            } else if (!item.isQuestion) {
+                // POWERUPS (Shield, Magnet, Slowmo)
+                ctx.translate(item.x + item.width/2, item.y + item.height/2);
+                ctx.shadowBlur = 15;
+                
+                ctx.beginPath();
+                ctx.arc(0, 0, item.width/2, 0, Math.PI*2);
+                
+                if(item.type === 'SHIELD') {
+                    ctx.shadowColor = "#0ff"; ctx.fillStyle = "rgba(0, 255, 255, 0.5)"; ctx.fill();
+                    ctx.fillStyle="#fff"; ctx.font="20px Arial"; ctx.fillText("🛡️", -10, 7);
+                } else if(item.type === 'MAGNET') {
+                    ctx.shadowColor = "#f0f"; ctx.fillStyle = "rgba(255, 0, 255, 0.5)"; ctx.fill();
+                    ctx.fillStyle="#fff"; ctx.font="20px Arial"; ctx.fillText("🧲", -10, 7);
+                } else if(item.type === 'SLOWMO') {
+                    ctx.shadowColor = "#ff0"; ctx.fillStyle = "rgba(255, 255, 0, 0.5)"; ctx.fill();
+                    ctx.fillStyle="#fff"; ctx.font="20px Arial"; ctx.fillText("⏱️", -10, 7);
+                }
+                ctx.strokeStyle = "#fff"; ctx.stroke();
+                
+            } else {
+                // QUESTION BLOCKS
+                ctx.translate(item.x + item.width/2, item.y + item.height/2);
+                // Slight wiggle
+                ctx.rotate(Math.sin(item.rotation)*0.1); 
+                
+                // Box
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = item.color;
+                ctx.fillStyle = "rgba(10, 20, 30, 0.8)";
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = 2;
+                
+                // Draw pill shape
+                ctx.beginPath();
+                ctx.roundRect(-item.width/2, -item.height/2, item.width, item.height, 10);
+                ctx.fill();
+                ctx.stroke();
+
+                // Text
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 16px Rajdhani";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(item.text, 0, 2); // slight y offset for visual center
+            }
+            
+            ctx.restore();
+
+            // Collision (AABB approx)
+            let pLeft = player.x - player.width/3; // slightly smaller hitbox
+            let pRight = player.x + player.width/3;
+            let pTop = player.y - player.height/3;
+            let pBottom = player.y + player.height/3;
+            
+            let iLeft = item.x;
+            let iRight = item.x + item.width;
+            let iTop = item.y;
+            let iBottom = item.y + item.height;
+
+            if (pLeft < iRight && pRight > iLeft && pTop < iBottom && pBottom > iTop) {
+                // Collision Hit!
+                
+                if(item.type === 'ASTEROID') {
+                    takeDamage();
+                    createParticles(item.x + item.width/2, item.y + item.height/2, "#fff");
+                } 
+                else if (!item.isQuestion) {
+                    // Powerup
+                    activatePowerup(item.type);
+                }
+                else if(item.type === currentTargetType) {
+                    // Correct Question!
+                    score += (10 * comboMultiplier);
+                    correctCatchesInRow++;
+                    sfx.good();
+                    
+                    // --- ANIMASI BERJAYA MENJAWAB ---
+                    let cX = item.x + item.width/2;
+                    let cY = item.y + item.height/2;
+                    createParticles(cX, cY, "#0f0", 25); // Lebih banyak zarah
+                    createRing(cX, cY, "#0f0");
+                    createRing(cX, cY, "#0ff", 5);
+                    
+                    const pujian = ["TEPAT!", "HEBAT!", "TERBAIK!", "BIJAK!"];
+                    let teksPujian = pujian[Math.floor(Math.random() * pujian.length)];
+                    
+                    // Floating text skor dan pujian
+                    createFloatingText(`+${10*comboMultiplier}`, cX, cY - 10, "#0f0");
+                    createFloatingText(teksPujian, cX, cY - 30, "#ff0", true); // Teks membesar
+
+                    // Combo system & Difficulty curve (Level target stays same, just gets slightly faster)
+                    if(correctCatchesInRow % 3 === 0) {
+                        comboMultiplier++;
+                        if(comboMultiplier > 3) warpSpeed = true; // Visual flare
+                        gameSpeed += 0.10;
+                    }
+                } else {
+                    // Wrong Question!
+                    takeDamage(item); // pass item to log mistake
+                    createParticles(item.x + item.width/2, item.y + item.height/2, "#f00");
+                    createFloatingText("SALAH!", item.x + item.width/2, item.y, "#f00");
+                }
+                
+                updateHUD();
+                items.splice(i, 1);
+                continue;
+            }
+
+            // Remove if off screen
+            if(item.y > height + 50) {
+                items.splice(i, 1);
+            }
+        }
+    }
+
+    function createRing(x, y, color, delay = 0) {
+        rings.push({ x: x, y: y, radius: 10, life: 1.0 + (delay * 0.05), color: color });
+    }
+
+    let floatingTexts = [];
+    function createFloatingText(txt, x, y, color, isBig = false) {
+        floatingTexts.push({text: txt, x: x, y: y, life: 1.0, color: color, isBig: isBig});
+    }
+
+    function drawEffects() {
+        // Rings
+        for(let i = rings.length -1; i>=0; i--) {
+            let r = rings[i];
+            if (r.life <= 1.0) {
+                r.radius += 8;
+                ctx.globalAlpha = Math.max(0, r.life);
+                ctx.strokeStyle = r.color;
+                ctx.lineWidth = 4 * r.life;
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, r.radius, 0, Math.PI*2);
+                ctx.stroke();
+            }
+            r.life -= 0.05;
+            if(r.life <= 0) rings.splice(i, 1);
+        }
+
+        // Particles
+        for(let i = particles.length -1; i>=0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.05;
+            
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.random()*3+2, 0, Math.PI*2);
+            ctx.fill();
+            
+            if(p.life <= 0) particles.splice(i, 1);
+        }
+
+        // Floating texts
+        for(let i = floatingTexts.length -1; i>=0; i--) {
+            let ft = floatingTexts[i];
+            ft.y -= ft.isBig ? 1 : 2;
+            ft.life -= 0.02;
+            
+            ctx.globalAlpha = Math.max(0, ft.life);
+            ctx.fillStyle = ft.color;
+            
+            // Animasi membesar jika ia adalah teks pujian
+            let size = ft.isBig ? (20 + (1 - ft.life) * 30) : 24; 
+            
+            ctx.font = `bold ${size}px Orbitron`;
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = ft.color;
+            ctx.fillText(ft.text, ft.x, ft.y);
+            ctx.shadowBlur = 0;
+            
+            if(ft.life <= 0) floatingTexts.splice(i, 1);
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
+    // --- MAIN GAME LOOP ---
+    function gameLoop(timestamp) {
+        if(gameState !== 'PLAYING') return;
+        
+        let deltaTime = (timestamp - lastTimestamp) / 1000;
+        if (isNaN(deltaTime)) deltaTime = 0;
+        if (deltaTime > 0.1) deltaTime = 0.1; // Mengelakkan lompatan masa drastik jika pengguna menukar tab
+        lastTimestamp = timestamp;
+
+        // Timer Logic
+        if (!isResting) {
+            timeLeft -= deltaTime;
+            if (timeLeft <= 0) {
+                // End of level
+                if (currentLevelIdx >= levelSequence.length - 1) {
+                    // Game Beaten!
+                    gameState = 'VICTORY';
+                    stopBGM();
+                    sfx.good(); setTimeout(sfx.good, 200); setTimeout(sfx.good, 400);
+                    
+                    if(score > highScore) {
+                        highScore = score;
+                        localStorage.setItem('astroAkaunHighScore', highScore);
+                        highScoreDisplayUI.innerText = highScore;
+                    }
+                    document.getElementById('victoryScore').innerText = score;
+                    updateScreens();
+                    return;
+                } else {
+                    beginRest();
+                }
+            } else {
+                timerDisplay.innerText = Math.ceil(timeLeft);
+                timerDisplay.parentElement.classList.remove('text-red-400');
+                if (timeLeft <= 5) timerDisplay.parentElement.classList.add('text-red-400'); // Flash red at 5s
+            }
+        } else {
+            // Resting phase
+            timeLeft -= deltaTime;
+            restCountdown.innerText = "Mula dalam: " + Math.ceil(timeLeft) + "s";
+            
+            if (timeLeft <= 0) {
+                isResting = false;
+                currentLevelIdx++;
+                timeLeft = 40.0;
+                startLevel();
+            }
+        }
+
+        // Clear canvas (transparent to show video underneath)
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw background elements
+        drawStars();
+
+        // Spawning logic (Only spawn if NOT resting)
+        // Kadar kemunculan (spawn rate) ditingkatkan dan had maksimum item dinaikkan ke 12
+        if(!isResting && Math.random() < 0.03 * gameSpeed && items.length < 12) {
+            spawnItem();
+        }
+
+        // Draw AR Overlay if active
+        if(usingHand) {
+            drawHandSkeleton();
+        }
+
+        // Update and Draw game entities
+        updateAndDrawItems();
+        drawPlayer();
+        drawEffects();
+
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+
+    // Initial background draw for menu
+    function menuLoop() {
+        if(gameState === 'MENU' || gameState === 'TUTORIAL' || gameState === 'READY') {
+            ctx.clearRect(0, 0, width, height);
+            drawStars();
+            drawPlayer();
+            if((gameState === 'TUTORIAL' || gameState === 'READY') && usingHand) drawHandSkeleton();
+            requestAnimationFrame(menuLoop);
+        }
+    }
+    menuLoop(); // Start ambient background
+
+</script>
+</body>
+</html>
